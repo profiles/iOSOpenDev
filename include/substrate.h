@@ -1,5 +1,5 @@
 /* Cydia Substrate - Powerful Code Insertion Platform
- * Copyright (C) 2008-2013  Jay Freeman (saurik)
+ * Copyright (C) 2008-2015  Jay Freeman (saurik)
 */
 
 /* GNU General Public License, Version 3 {{{ */
@@ -54,12 +54,16 @@ extern "C" {
 extern "C" {
 #endif
 
-bool MSHookProcess(pid_t pid, const char *library);
+typedef const struct MSImage *MSImageRef;
 
-typedef const void *MSImageRef;
+MSImageRef MSMapImage(const char *file);
+const void *MSImageAddress(MSImageRef image);
+void MSCloseImage(MSImageRef);
 
 MSImageRef MSGetImageByName(const char *file);
+
 void *MSFindSymbol(MSImageRef image, const char *name);
+char *MSFindAddress(MSImageRef image, void **address);
 
 void MSHookFunction(void *symbol, void *replace, void **result);
 
@@ -69,6 +73,7 @@ __attribute__((__deprecated__))
 IMP MSHookMessage(Class _class, SEL sel, IMP imp, const char *prefix _default(NULL));
 #endif
 void MSHookMessageEx(Class _class, SEL sel, IMP imp, IMP *result);
+void MSHookClassPair(Class target, Class hook, Class old);
 #endif
 
 #ifdef __ANDROID__
@@ -86,6 +91,23 @@ void MSJavaSetObjectKey(JNIEnv *jni, jobject object, MSJavaObjectKey key, void *
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef __APPLE__
+
+#define MSHookInterface(target, hook, base) \
+@class target; \
+@interface $ ## hook : base { target *$self; } @end \
+@implementation $ ## hook \
++ (void) initialize {} \
+@end \
+@interface hook : $ ## hook @end \
+@implementation hook (MS) + (void) load { \
+    MSHookClassPair(objc_getClass(#target), self, class_getSuperclass(self)); \
+} @end
+
+#define MSSelf ((__typeof__($self)) self)
+
 #endif
 
 #ifdef __cplusplus
@@ -135,7 +157,11 @@ static inline void MSHookMessage(Class _class, SEL sel, Type_ *imp, Type_ **resu
 template <typename Type_>
 static inline Type_ &MSHookIvar(id self, const char *name) {
     Ivar ivar(class_getInstanceVariable(object_getClass(self), name));
-    void *pointer(ivar == NULL ? NULL : reinterpret_cast<char *>(self) + ivar_getOffset(ivar));
+    void *pointer(ivar == NULL ? NULL : reinterpret_cast<char *>(
+#if __has_feature(objc_arc)
+        (__bridge void *)
+#endif
+    self) + ivar_getOffset(ivar));
     return *reinterpret_cast<Type_ *>(pointer);
 }
 
@@ -266,7 +292,7 @@ static inline Type_ &MSHookIvar(id self, const char *name) {
 #define MSOldCall(args...) \
     _old(self, _cmd, ## args)
 #define MSSuperCall(args...) \
-    _spr(& (struct objc_super) {self, class_getSuperclass(_cls)}, _cmd, ## args)
+    _spr((struct objc_super[1]) {{self, class_getSuperclass(_cls)}}, _cmd, ## args)
 
 #define MSIvarHook(type, name) \
     type &name(MSHookIvar<type>(self, #name))
@@ -315,13 +341,13 @@ static inline void MSHookFunction(MSImageRef image, const char *name, Type_ *rep
 
 #endif
 
-#ifdef __ANDROID__
-
 // g++ versions before 4.7 define __cplusplus to 1
 // http://gcc.gnu.org/bugzilla/show_bug.cgi?id=1773
 #if __cplusplus >= 201103L || defined(__GXX_EXPERIMENTAL_CXX0X__)
 
-template <typename Type_, typename Kind_, typename ...Args_>
+#ifdef __ANDROID__
+
+template <typename Type_, typename Kind_, typename... Args_>
 static inline void MSJavaHookMethod(JNIEnv *jni, jclass _class, jmethodID method, Type_ (*replace)(JNIEnv *, Kind_, Args_...), Type_ (**result)(JNIEnv *, Kind_, ...)) {
     return MSJavaHookMethod(
         jni, _class, method,
@@ -331,6 +357,10 @@ static inline void MSJavaHookMethod(JNIEnv *jni, jclass _class, jmethodID method
 }
 
 #endif
+
+#endif
+
+#ifdef __ANDROID__
 
 #ifdef __cplusplus
 
@@ -350,8 +380,11 @@ static inline jclass MSJavaFindClass(JNIEnv *jni, jobject loader, const char *na
 
     jstring string(jni->NewStringUTF(name));
     jobject _class(jni->CallStaticObjectMethod(Class, Class$forName, string, JNI_TRUE, loader));
-    if (jni->ExceptionCheck())
+
+    if (jni->ExceptionCheck()) {
+        jni->ExceptionClear();
         return NULL;
+    }
 
     return reinterpret_cast<jclass>(_class);
 }
@@ -385,6 +418,9 @@ _disused static void MSJavaCleanWeak(void *data, JNIEnv *jni, void *value) {
 #define SubstrateConcat(lhs, rhs) \
     SubstrateConcat_(lhs, rhs)
 
+#define SubstrateStringize(value) \
+    #value
+
 #ifdef __APPLE__
     #define SubstrateSection \
         __attribute__((__section__("__TEXT, __substrate")))
@@ -398,22 +434,35 @@ _disused static void MSJavaCleanWeak(void *data, JNIEnv *jni, void *value) {
 #define MSFilterObjC_Class "Filter:ObjC.Class"
 #endif
 
+#ifdef __ANDROID__
 #define MSFilterLibrary "Filter:Library"
+#endif
+
+#define MSFilterCFVersion "Filter:CFVersion"
 #define MSFilterExecutable "Filter:Executable"
 
 #define MSConfig(name, value) \
-    extern const char SubstrateConcat(_substrate_, __LINE__)[] SubstrateSection = name "=" value;
+    extern const char SubstrateConcat(_substrate_, __LINE__)[] SubstrateSection; \
+    const char SubstrateConcat(_substrate_, __LINE__)[] SubstrateSection = name "=" value;
+
+#define MSConfigValue(name, value) \
+    char SubstrateConcat(_substrate_MSConfigValue_Invalid_, __LINE__)[((double)value, 0)]; \
+    const char SubstrateConcat(_substrate_, __LINE__)[] SubstrateSection = name "=" SubstrateStringize(value);
+
+#define MSConfigRange(name, lo, hi) \
+    char SubstrateConcat(_substrate_MSConfigRange_Invalid_, __LINE__)[(double)lo <= (double)hi ? 0 : -1]; \
+    MSConfig(name, SubstrateStringize(lo) "," SubstrateStringize(hi))
 
 #ifdef __cplusplus
 #define MSInitialize \
-    static void _MSInitialize(void); \
-    namespace { static class $MSInitialize { public: _finline $MSInitialize() { \
-        _MSInitialize(); \
-    } } $MSInitialize; } \
-    static void _MSInitialize()
+    static void SubstrateConcat(_MSInitialize, __LINE__)(void); \
+    namespace { static class SubstrateConcat($MSInitialize, __LINE__) { public: _finline SubstrateConcat($MSInitialize, __LINE__)() { \
+        SubstrateConcat(_MSInitialize, __LINE__)(); \
+    } } SubstrateConcat($MSInitialize, __LINE__); } \
+    static void SubstrateConcat(_MSInitialize, __LINE__)()
 #else
 #define MSInitialize \
-    __attribute__((__constructor__)) static void _MSInitialize(void)
+    __attribute__((__constructor__)) static void SubstrateConcat(_MSInitialize, __LINE__)(void)
 #endif
 
 #define Foundation_f "/System/Library/Frameworks/Foundation.framework/Foundation"
