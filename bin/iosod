@@ -422,10 +422,10 @@ function copyFileToDevice() # args: sourceFile, targetDir, hostAddress, hostPort
 	targetFilePath="$targetDir/`basename \"$sourceFile\"`" || \
 		panic $? "Failed to build target file path"
 		
-	ssh -p$hostPort root@$hostAddress rm -f "\"$targetFilePath\"" || \
+	ssh -p$hostPort root@$hostAddress rm -f "$targetFilePath" || \
 		panic $? "Failed to remove existing file $targetFilePath on device $hostAddress"
 	
-	scp -P$hostPort "$sourceFile" root@$hostAddress:"\"$targetFilePath\"" || \
+	scp -P$hostPort "$sourceFile" root@$hostAddress:"$targetFilePath" || \
 		panic $? "Failed to copy file $sourceFile to device $hostAddress at directory $targetDir"
 }
 
