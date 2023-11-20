@@ -750,7 +750,12 @@ function createDebianPackage() # args: sourceDir, packageName [, outputDir]
 	local tempDir="`getTempDir`"
 	
 	createTarForDebianPackage "$sourceDir/DEBIAN" "$tempDir" "control" "-n"
-	createTarForDebianPackage "$sourceDir" "$tempDir" "data" "--exclude" "DEBIAN/*" "--exclude" "DEBIAN"
+	if [[ $iOSOpenDevRootlessInstallPrefix != "" ]]; then
+		createTarForDebianPackage "$sourceDir" "$tempDir" "data" "--exclude" "DEBIAN/*" "--exclude" "DEBIAN" "-s" "|.*|$iOSOpenDevRootlessInstallPrefix/~|"
+	else
+		createTarForDebianPackage "$sourceDir" "$tempDir" "data" "--exclude" "DEBIAN/*" "--exclude" "DEBIAN"
+	fi
+	
 	
 	echo "2.0" > "$tempDir/debian-binary" || \
 		panic $? "Failed to create debian-binary file"
@@ -837,7 +842,7 @@ function managePackageOnDevice() # args: manageAction, packageFileOrName, hostAd
 	
 		requireFile "$packageFileOrName" false
 
-		devicePackagesDir="/var/root/iOSOpenDevPackages"
+		devicePackagesDir="$iOSOpenDevRootlessInstallPrefix/var/root/iOSOpenDevPackages"
 
 		copyFileToDevice "$packageFileOrName" "$devicePackagesDir" "$hostAddress" "$hostPort"
 
@@ -1227,7 +1232,7 @@ function addSshKeyToDevice() # args: [hostAddress] [, useROption] [, hostPort]
 	local homeDir=`eval echo ~$USER`
 	local privateKeyPath="$homeDir/.ssh/id_rsa"
 	local publicKeyPath="$homeDir/.ssh/id_rsa.pub"
-	local authorizedKeysPath="/var/root/.ssh/authorized_keys"
+	local authorizedKeysPath="$iOSOpenDevRootlessInstallPrefix/var/root/.ssh/authorized_keys"
 	local publicKey
 	local sshKeygenBin
 	local existingAuthorizedKeys
@@ -1688,6 +1693,8 @@ function xcodeBuildPhase() # no args
 	[[ $iOSOpenDevPort != "" ]] || \
 		iOSOpenDevPort=22
 
+	[[ $iOSOpenDevRootlessInstallPrefix != "" ]] || \
+		iOSOpenDevRootlessInstallPrefix=`getBashProfileEnvVarValue "iOSOpenDevRootlessInstallPrefix"`
 
 	# verify requirements #
 	requireFile "$builtExecutable" false
@@ -1731,7 +1738,7 @@ function xcodeBuildPhase() # no args
 	if [[ "$iOSOpenDevCopyOnBuild" == "YES" ]]; then
 	
 		if [[ "$iOSOpenDevDevice" != "" ]]; then
-			copyFileToDevice "$builtExecutable" "/var/root/iOSOpenDevBuilds/$PROJECT_NAME" "$iOSOpenDevDevice" "$iOSOpenDevPort"
+			copyFileToDevice "$builtExecutable" "$iOSOpenDevRootlessInstallPrefix/var/root/iOSOpenDevBuilds/$PROJECT_NAME" "$iOSOpenDevDevice" "$iOSOpenDevPort"
 		else
 			# build setting iOSOpenDevDevice is empty #
 			panic 1 "Unable to copy executable to device since build setting iOSOpenDevDevice is not set or is empty and it is not exported in your Bash personal initialization file"
