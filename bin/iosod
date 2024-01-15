@@ -640,6 +640,21 @@ function getControlFieldValue() # args: controlFile, fieldName [, isRequired]
 	echo "$perlValue"
 }
 
+function setControlFileArchitecture() # args: controlFile, architecture
+{
+	local controlFile="$1"
+	local architecture="$2"
+	
+	requireFile "$controlFile" false
+	
+	echo -n "Setting control file $controlFile architecture field to $architecture... "
+
+	sed -i "" "s/Architecture:.*/Architecture: $architecture/g" "$controlFile" || \
+		panic $? "Failed."
+
+	echo "Done."
+}
+
 
 function getPackageFileNameUsingControlFile() # args: controlFile
 {
@@ -1672,6 +1687,7 @@ function xcodeBuildPhase() # no args
 	local stripOption
 	local versionPListPath
 	local packageFileName
+	local architecture="iphoneos-arm"
 	
 	local packageInstallSource
 	if [[ $SHALLOW_BUNDLE != "YES" ]]; then
@@ -1693,12 +1709,28 @@ function xcodeBuildPhase() # no args
 	[[ $iOSOpenDevPort != "" ]] || \
 		iOSOpenDevPort=22
 
-	[[ $iOSOpenDevRootlessInstallPrefix != "" ]] || \
-		iOSOpenDevRootlessInstallPrefix=`getBashProfileEnvVarValue "iOSOpenDevRootlessInstallPrefix"`
+	[[ $iOSOpenDevPackageScheme != "" ]] || \
+		iOSOpenDevPackageScheme=`getBashProfileEnvVarValue "iOSOpenDevPackageScheme"`
 
 	# verify requirements #
 	requireFile "$builtExecutable" false
 	requireDir "$packageDirectory"
+
+	if [[ "$iOSOpenDevPackageScheme" == "rootless" ]]; then
+		echo "building rootless package"
+		architecture="iphoneos-arm64"
+		iOSOpenDevRootlessInstallPrefix="/var/jb"
+	elif [[ "$iOSOpenDevPackageScheme" == "roothide" ]]; then
+		echo "build roothide package"
+		architecture="iphoneos-arm64e"
+		iOSOpenDevRootlessInstallPrefix=""
+	else
+		echo "build rootful package"
+		architecture="iphoneos-arm"
+		iOSOpenDevRootlessInstallPrefix=""
+	fi
+
+	setControlFileArchitecture "$packageDirectory/DEBIAN/control" "$architecture"
 	
 	# create latest build symlink #
 	createSymlink "$builtProductsDir" "$latestBuildSymlink"
