@@ -1,0 +1,6 @@
+[submodule "lib"]
+	path = lib
+	url = https://github.com/profiles/theos-lib/
+[submodule "include"]
+	path = include
+	url = https://github.com/profiles/theos-headers/
