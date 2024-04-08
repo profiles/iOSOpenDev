@@ -16,7 +16,6 @@ if [[ -f "$scriptPath" ]]; then
 	echo "Running $scriptPath..."
 	bash "$scriptPath" base
 	bash "$scriptPath" sdk -sdk iphoneos
-	bash "$scriptPath" sdk -sdk iphonesimulator
 
 	exit 0
 else
