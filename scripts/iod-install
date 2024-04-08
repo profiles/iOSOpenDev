@@ -1,0 +1,25 @@
+#!/bin/bash
+
+set -e
+
+export iOSOpenDevPath="/opt/iOSOpenDev"
+
+[[ -d "$iOSOpenDevPath" ]] || \
+	sudo mkdir -p "$iOSOpenDevPath"
+
+sudo chown -R $USER:$(id -gn $USER) $iOSOpenDevPath
+
+scriptPath="`mktemp -d`/iod-setup"
+curl -fsSL https://github.com/profiles/iOSOpenDev/raw/master/scripts/iod-setup -o "$scriptPath"
+
+if [[ -f "$scriptPath" ]]; then
+	echo "Running $scriptPath..."
+	bash "$scriptPath" base
+	bash "$scriptPath" sdk -sdk iphoneos
+	bash "$scriptPath" sdk -sdk iphonesimulator
+
+	exit 0
+else
+	echo "$scriptPath not found!"
+	exit 1
+fi
